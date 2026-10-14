@@ -112,6 +112,7 @@ Deno.serve(async (req: Request) => {
       const positionCost = position ? 50 : 0;
       const suppliedCode = typeof data.freeCode === "string" ? data.freeCode : "";
       const configuredCode = env("ADPIXEL_FREE_CODE");
+      if (suppliedCode && (!configuredCode || suppliedCode !== configuredCode)) return json({error:"invalid_free_code", message:"Der eingegebene Freischaltcode ist ungültig. Amazon-Geschenkkarten können hier nicht als Zahlung verifiziert werden."}, 422);
       const isFree = Boolean(configuredCode && suppliedCode && suppliedCode === configuredCode);
       const amount = isFree ? 0 : base + popup + positionCost;
       const orderId = crypto.randomUUID();
