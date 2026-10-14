@@ -16,6 +16,6 @@ jobs:
         with:
           deno-version: v2.x
       - name: Test server-side pricing rules
-        run: deno test supabase/functions/adpixel-api/pricing.test.ts
+        run: deno test supabase/functions/adpixel-api/pricing.test.ts supabase/functions/adpixel-api/security.test.ts
       - name: Type-check Edge Function
         run: deno check supabase/functions/adpixel-api/index.ts
