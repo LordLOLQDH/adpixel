@@ -5,7 +5,7 @@ const files = ["index.html", "admin.html", "partner.html"];
 let failures = 0;
 for (const file of files) {
   const html = readFileSync(resolve(file), "utf8");
-  const scripts = [...html.matchAll(/<script(?![^>]*\\bsrc\\s*=)[^>]*>([\\s\\S]*?)<\\/script>/gi)];
+  const scripts = [...html.matchAll(/<script(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi)];
   if (!scripts.length) {
     console.error(file + ": no inline scripts found");
     failures++;
