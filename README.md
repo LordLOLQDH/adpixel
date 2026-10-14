@@ -1,6 +1,6 @@
 # AdPixel — Werbeflächen und Partnerprogramm
 
-Version: **0.3.0** (in Entwicklung)
+Version: **0.4.0** (in Entwicklung)
 
 AdPixel is a mobile-friendly static site backed by a Supabase Edge Function, PostgreSQL and Supabase Storage.
 
@@ -104,8 +104,9 @@ Secrets cannot be read or set through the connected tools in this session. Verif
 - `supabase/migrations/202610140001_adpixel_backend.sql`
 - `supabase/migrations/20261014170000_adpixel_partners.sql`
 - `supabase/migrations/20261014173000_adpixel_popup_position.sql`
+- `supabase/migrations/20261014180000_adpixel_order_idempotency.sql`
 
-The two new AdPixel migrations have been applied to the connected Supabase project. Do not edit applied migration files; create a new migration for future schema changes.
+The new AdPixel migrations have been applied to the connected Supabase project. Order submissions include a unique idempotency key so retrying the same request does not create a second order. Do not edit applied migration files; create a new migration for future schema changes.
 
 ## Automated tests
 
@@ -125,6 +126,7 @@ The existing public site is currently served through GitHub Pages. This reposito
 
 - CORS is restricted to configured exact origins (default GitHub Pages origin).
 - User input is validated server-side; image uploads are limited to 8 MB and accepted image MIME types.
+- Order retries are deduplicated using a unique idempotency key; refunded or failed orders are unpublished.
 - RLS and explicit grants prevent direct client access to private AdPixel tables.
 - Admin actions require signed sessions; manually confirming a payment requires a note.
 - The existing Supabase project also contains KDS data and functions. Do not change unrelated KDS resources as part of AdPixel operations.
