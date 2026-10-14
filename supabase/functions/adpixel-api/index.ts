@@ -116,6 +116,13 @@ function randomCode(length:number){
   const bytes=crypto.getRandomValues(new Uint8Array(length));
   return Array.from(bytes,b=>alphabet[b%alphabet.length]).join("");
 }
+async function authAttemptAllowed(req:Request,scope:string,limit=8,windowSeconds=900){
+  const ip=req.headers.get("cf-connecting-ip")||req.headers.get("x-real-ip")||(req.headers.get("x-forwarded-for")||"").split(",")[0].trim()||"unknown";
+  const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(scope+"|"+ip));
+  const key=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,"0")).join("");
+  const allowed=await db("rpc/adpixel_consume_auth_attempt",{method:"POST",body:JSON.stringify({p_attempt_key:key,p_limit:limit,p_window_seconds:windowSeconds})});
+  return allowed===true;
+}
 async function hashPassword(password:string,salt:string){
   const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(password),"PBKDF2",false,["deriveBits"]);
   const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt:fromB64url(salt),iterations:210000,hash:"SHA-256"},key,256);
@@ -277,6 +284,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "admin_login") {
+      if(!await authAttemptAllowed(req,"admin",8,900))return respond({error:"rate_limited",message:"Zu viele Anmeldeversuche. Bitte warte 15 Minuten."},429,origin);
       const provided = typeof data.code === "string" ? data.code : "";
       const configured = env("ADPIXEL_ADMIN_CODE");
       if (!configured || !SESSION_SECRET || !provided || provided !== configured) return respond({error:"invalid_admin_code"}, 401);
@@ -285,6 +293,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "partner_register") {
+      if(!await authAttemptAllowed(req,"register",5,900))return respond({error:"rate_limited",message:"Zu viele Registrierungsversuche. Bitte warte 15 Minuten."},429,origin);
       const displayName = String(data.displayName || "").trim();
       const email = String(data.email || "").trim().toLowerCase();
       const password = String(data.password || "");
@@ -307,6 +316,7 @@ Deno.serve(async (req: Request) => {
     }
     if (action === "partner_login") {
       const email=String(data.email||"").trim().toLowerCase(), password=String(data.password||"");
+      if(!await authAttemptAllowed(req,"partner:"+email,8,900))return respond({error:"rate_limited",message:"Zu viele Anmeldeversuche. Bitte warte 15 Minuten."},429,origin);
       const rows=await db("adpixel_partners?select=id,email,display_name,website_url,password_salt,password_hash,partner_code,status,banner_status,free_ad_status,free_ad_order_id,last_banner_check_at,last_banner_check_message,created_at&email=eq."+encodeURIComponent(email)+"&limit=1");
       const p=rows?.[0];
       if (!p || p.status!=="active" || password.length>128 || !constantTimeEqual(await hashPassword(password,p.password_salt||""),p.password_hash||"")) return respond({error:"invalid_credentials",message:"Anmeldedaten ungültig oder Konto gesperrt."},401,origin);
