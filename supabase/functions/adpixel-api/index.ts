@@ -72,6 +72,10 @@ function decodeImage(value: unknown) {
   if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new Error("image_too_large");
   return { bytes, type: match[1] };
 }
+async function saveReferral(order:any){
+  if(!order?.partner_id||!order?.referral_code||!order?.referral_attributed_at||!order?.id)return;
+  await db("adpixel_referrals?on_conflict=order_id",{method:"POST",headers:{"Prefer":"resolution=ignore-duplicates,return=minimal"},body:JSON.stringify({partner_id:order.partner_id,order_id:order.id,referral_code:order.referral_code,attributed_at:order.referral_attributed_at})});
+}
 async function removeUploaded(path:string){
   try{
     await fetch(SUPABASE_URL+"/storage/v1/object/adpixel-assets",{method:"DELETE",headers:{apikey:SERVICE_KEY,Authorization:"Bearer "+SERVICE_KEY,"Content-Type":"application/json"},body:JSON.stringify({prefixes:[path]})});
@@ -200,8 +204,8 @@ Deno.serve(async (req: Request) => {
       if (data.amazonVoucher && String(data.amazonVoucher).trim()) return respond({error:"amazon_voucher_cannot_be_verified_online", message:"Amazon-Geschenkkarten können über diese Schnittstelle nicht zuverlässig auf Echtheit und Restguthaben geprüft werden. Es wurde kein Code gespeichert und keine Bestellung als bezahlt markiert."}, 422, origin);
       const idempotencyKey=String(data.idempotencyKey||"");
       if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey))return respond({error:"idempotency_key_required",message:"Bitte Anfrage erneut senden; die Bestellkennung fehlt."},400,origin);
-      const previous=await db("adpixel_orders?select=id,amount_cents,payment_status,status&idempotency_key=eq."+encodeURIComponent(idempotencyKey)+"&limit=1");
-      if(previous?.[0])return respond({ok:true,orderId:previous[0].id,amountCents:previous[0].amount_cents,currency:"EUR",status:previous[0].status,alreadyProcessed:true,message:"Diese Anfrage wurde bereits verarbeitet. Es wurde keine zweite Bestellung angelegt."},200,origin);
+      const previous=await db("adpixel_orders?select=id,amount_cents,payment_status,status,partner_id,referral_code,referral_attributed_at&idempotency_key=eq."+encodeURIComponent(idempotencyKey)+"&limit=1");
+      if(previous?.[0]){await saveReferral(previous[0]);return respond({ok:true,orderId:previous[0].id,amountCents:previous[0].amount_cents,currency:"EUR",status:previous[0].status,alreadyProcessed:true,message:"Diese Anfrage wurde bereits verarbeitet. Es wurde keine zweite Bestellung angelegt."},200,origin);}
       const main = decodeImage(data.image);
       const popupPresent = Boolean(data.popupImage || String(data.popupText || "").trim() || String(data.popupButton || "").trim() || String(data.popupUrl || "").trim());
       const popupTarget = data.popupUrl ? validUrl(data.popupUrl) : "";
@@ -257,17 +261,18 @@ Deno.serve(async (req: Request) => {
       try {
         await db("adpixel_orders", {method:"POST", headers:{"Prefer":"return=minimal"}, body:JSON.stringify(order)});
       } catch (insertError) {
-        const duplicate=await db("adpixel_orders?select=id,amount_cents,payment_status,status&idempotency_key=eq."+encodeURIComponent(idempotencyKey)+"&limit=1").catch(()=>[]);
+        const duplicate=await db("adpixel_orders?select=id,amount_cents,payment_status,status,partner_id,referral_code,referral_attributed_at&idempotency_key=eq."+encodeURIComponent(idempotencyKey)+"&limit=1").catch(()=>[]);
         if(duplicate?.[0]){
           await removeUploaded(mainPath);
           if(popupPath)await removeUploaded(popupPath);
+          await saveReferral(duplicate[0]);
           return respond({ok:true,orderId:duplicate[0].id,amountCents:duplicate[0].amount_cents,currency:"EUR",status:duplicate[0].status,alreadyProcessed:true,message:"Diese Anfrage wurde bereits verarbeitet. Es wurde keine zweite Bestellung angelegt."},200,origin);
         }
+        await removeUploaded(mainPath);
+        if(popupPath)await removeUploaded(popupPath);
         throw insertError;
       }
-      if (attribution) {
-        await db("adpixel_referrals", {method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({partner_id:attribution.partner_id,order_id:orderId,referral_code:attribution.referral_code,attributed_at:attribution.referral_attributed_at})});
-      }
+      if (attribution) await saveReferral({id:orderId,partner_id:attribution.partner_id,referral_code:attribution.referral_code,referral_attributed_at:attribution.referral_attributed_at});
       return respond({ok:true, orderId, amountCents:amount, currency:"EUR", freeUpload:isFree, status:"pending", message:isFree ? "Kostenloser Auftrag eingegangen und wartet auf Freigabe." : "Auftrag gespeichert. Zahlung ist noch nicht erfolgt; Veröffentlichung erst nach bestätigter Zahlung und Freigabe."}, 201, origin);
     }
 
