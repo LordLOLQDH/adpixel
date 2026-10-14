@@ -167,7 +167,7 @@ Deno.serve(async (req: Request) => {
       const found = await db("adpixel_orders?select=*&id=eq." + encodeURIComponent(id) + "&limit=1");
       const order = found?.[0];
       if (!order) return json({error:"order_not_found"}, 404);
-      if (!(order.payment_status === "paid" || order.payment_status === "free_pending_review") || order.status === "rejected") return json({error:"order_not_eligible", message:"Zuerst Zahlung oder kostenlosen Auftrag prüfen und den Auftrag freigeben."}, 409);
+      if (order.status !== "approved" || !(order.payment_status === "paid" || order.payment_status === "free_pending_review")) return json({error:"order_not_eligible", message:"Zuerst Zahlung oder kostenlosen Auftrag prüfen und den Auftrag freigeben."}, 409);
       await db("adpixel_ads?on_conflict=order_id", {method:"POST", headers:{"Prefer":"resolution=merge-duplicates,return=minimal"}, body:JSON.stringify({order_id:order.id,image_path:order.main_image_path,target_url:order.target_url,pixel_width:order.pixel_width,pixel_height:order.pixel_height,popup_image_path:order.popup_image_path,popup_text:order.popup_text,popup_button:order.popup_button,popup_url:order.popup_url,published:true,published_at:new Date().toISOString()})});
       await db("adpixel_orders?id=eq." + encodeURIComponent(id), {method:"PATCH", headers:{"Prefer":"return=minimal"}, body:JSON.stringify({status:"published",updated_at:new Date().toISOString()})});
       return json({ok:true});
