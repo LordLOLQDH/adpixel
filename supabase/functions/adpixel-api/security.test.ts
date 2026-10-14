@@ -6,9 +6,9 @@ Deno.test("only public HTTPS sites are accepted for partner checks",()=>{
 });
 Deno.test("private and special IPv4 ranges are rejected",()=>{
   for(const ip of ["127.0.0.1","10.0.0.1","172.16.0.1","192.168.0.1","169.254.10.20","100.64.0.1","198.18.0.1","0.0.0.0","224.0.0.1"])assert(!ipIsPublic(ip),"private IPv4 accepted: "+ip);
-  for(const ip of ["1.1.1.1","8.8.8.8","203.0.113.10"])assert(ipIsPublic(ip),"public IPv4 rejected: "+ip);
+  for(const ip of ["1.1.1.1","8.8.8.8","93.184.216.34"])assert(ipIsPublic(ip),"public IPv4 rejected: "+ip);
 });
 Deno.test("private IPv6 and IPv4-mapped IPv6 are rejected",()=>{
-  for(const ip of ["::","::1","fc00::1","fd12::1","fe80::1","ff02::1","::ffff:192.168.1.1"])assert(!ipIsPublic(ip),"private IPv6 accepted: "+ip);
+  for(const ip of ["::","::1","fc00::1","fd12::1","fe80::1","ff02::1","::ffff:192.168.1.1","2001:db8::1"])assert(!ipIsPublic(ip),"private IPv6 accepted: "+ip);
   assert(ipIsPublic("2606:4700:4700::1111"),"public IPv6 rejected");
 });
