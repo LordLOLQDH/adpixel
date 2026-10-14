@@ -72,6 +72,11 @@ function decodeImage(value: unknown) {
   if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new Error("image_too_large");
   return { bytes, type: match[1] };
 }
+async function removeUploaded(path:string){
+  try{
+    await fetch(SUPABASE_URL+"/storage/v1/object/adpixel-assets",{method:"DELETE",headers:{apikey:SERVICE_KEY,Authorization:"Bearer "+SERVICE_KEY,"Content-Type":"application/json"},body:JSON.stringify({prefixes:[path]})});
+  }catch{}
+}
 async function upload(path: string, dataUrl: unknown) {
   const {bytes, type} = decodeImage(dataUrl);
   const res = await fetch(SUPABASE_URL + "/storage/v1/object/adpixel-assets/" + path, {
@@ -193,6 +198,10 @@ Deno.serve(async (req: Request) => {
       if (!name || name.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return respond({error:"invalid_customer"}, 400, origin);
       if (!target || !Number.isInteger(w) || !Number.isInteger(h) || w < 1 || w > 100 || h < 1 || h > 100 || !Number.isInteger(packagePixels) || !(packagePixels in PACKAGE_PRICES) || area > packagePixels) return respond({error:"invalid_ad",message:"Größe oder Pixelpaket ist ungültig."}, 400, origin);
       if (data.amazonVoucher && String(data.amazonVoucher).trim()) return respond({error:"amazon_voucher_cannot_be_verified_online", message:"Amazon-Geschenkkarten können über diese Schnittstelle nicht zuverlässig auf Echtheit und Restguthaben geprüft werden. Es wurde kein Code gespeichert und keine Bestellung als bezahlt markiert."}, 422, origin);
+      const idempotencyKey=String(data.idempotencyKey||"");
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey))return respond({error:"idempotency_key_required",message:"Bitte Anfrage erneut senden; die Bestellkennung fehlt."},400,origin);
+      const previous=await db("adpixel_orders?select=id,amount_cents,payment_status,status&idempotency_key=eq."+encodeURIComponent(idempotencyKey)+"&limit=1");
+      if(previous?.[0])return respond({ok:true,orderId:previous[0].id,amountCents:previous[0].amount_cents,currency:"EUR",status:previous[0].status,alreadyProcessed:true,message:"Diese Anfrage wurde bereits verarbeitet. Es wurde keine zweite Bestellung angelegt."},200,origin);
       const main = decodeImage(data.image);
       const popupPresent = Boolean(data.popupImage || String(data.popupText || "").trim() || String(data.popupButton || "").trim() || String(data.popupUrl || "").trim());
       const popupTarget = data.popupUrl ? validUrl(data.popupUrl) : "";
@@ -242,10 +251,20 @@ Deno.serve(async (req: Request) => {
         popup_button: String(data.popupButton || "").slice(0,32) || null,
         popup_url: popupTarget || null, popup_custom_position:popupCustomPosition, amount_cents: amount, free_code_used: isFree,
         partner_id: attribution?.partner_id || null, referral_code: attribution?.referral_code || null,
-        referral_attributed_at: attribution?.referral_attributed_at || null,
+        referral_attributed_at: attribution?.referral_attributed_at || null, idempotency_key:idempotencyKey,
         payment_status: isFree ? "free_pending_review" : "pending", status: "pending",
       };
-      await db("adpixel_orders", {method:"POST", headers:{"Prefer":"return=minimal"}, body:JSON.stringify(order)});
+      try {
+        await db("adpixel_orders", {method:"POST", headers:{"Prefer":"return=minimal"}, body:JSON.stringify(order)});
+      } catch (insertError) {
+        const duplicate=await db("adpixel_orders?select=id,amount_cents,payment_status,status&idempotency_key=eq."+encodeURIComponent(idempotencyKey)+"&limit=1").catch(()=>[]);
+        if(duplicate?.[0]){
+          await removeUploaded(mainPath);
+          if(popupPath)await removeUploaded(popupPath);
+          return respond({ok:true,orderId:duplicate[0].id,amountCents:duplicate[0].amount_cents,currency:"EUR",status:duplicate[0].status,alreadyProcessed:true,message:"Diese Anfrage wurde bereits verarbeitet. Es wurde keine zweite Bestellung angelegt."},200,origin);
+        }
+        throw insertError;
+      }
       if (attribution) {
         await db("adpixel_referrals", {method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({partner_id:attribution.partner_id,order_id:orderId,referral_code:attribution.referral_code,attributed_at:attribution.referral_attributed_at})});
       }
@@ -307,7 +326,8 @@ Deno.serve(async (req: Request) => {
       if (action === "partner_set_website") {
         const website=safePartnerSite(data.websiteUrl);
         if (!website) return respond({error:"invalid_website",message:"Bitte eine öffentliche HTTPS-Website eingeben."},400,origin);
-        await db("adpixel_partners?id=eq."+encodeURIComponent(p.id),{method:"PATCH",headers:{"Prefer":"return=minimal"},body:JSON.stringify({website_url:website,banner_status:"pending",last_banner_check_message:"Prüfung ausstehend",updated_at:new Date().toISOString()})});
+        await db("adpixel_partners?id=eq."+encodeURIComponent(p.id),{method:"PATCH",headers:{"Prefer":"return=minimal"},body:JSON.stringify({website_url:website,banner_status:"pending",free_ad_status:p.free_ad_status==="used"?"used":"suspended",last_banner_check_message:"Prüfung ausstehend",updated_at:new Date().toISOString()})});
+        await db("adpixel_ads?partner_id=eq."+encodeURIComponent(p.id)+"&is_partner_free=eq.true&published=eq.true",{method:"PATCH",headers:{"Prefer":"return=minimal"},body:JSON.stringify({published:false,published_at:null})});
         await db("adpixel_partner_events",{method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({partner_id:p.id,event_type:"website_updated",detail:{website_url:website}})});
         return respond({ok:true,websiteUrl:website,message:"Website gespeichert. Bannerintegration jetzt prüfen."},200,origin);
       }
@@ -386,6 +406,7 @@ Deno.serve(async (req: Request) => {
       if(payment==="paid"&&!note)return respond({error:"payment_note_required",message:"Für eine manuelle Zahlungsbestätigung ist eine Prüfnotiz erforderlich."},400,origin);
       if(payment==="paid"&&(oldOrder.free_code_used||Number(oldOrder.amount_cents)<=0))return respond({error:"cannot_mark_free_order_paid",message:"Kostenlose Testbestellungen dürfen nicht als bezahlte Käufe gelten."},409,origin);
       await db("adpixel_orders?id=eq." + encodeURIComponent(id), {method:"PATCH", headers:{"Prefer":"return=minimal"}, body:JSON.stringify({status, payment_status:payment, admin_note:note, updated_at:new Date().toISOString()})});
+      if(payment==="refunded"||payment==="failed")await db("adpixel_ads?order_id=eq."+encodeURIComponent(id)+"&published=eq.true",{method:"PATCH",headers:{"Prefer":"return=minimal"},body:JSON.stringify({published:false,published_at:null})});
       if(oldOrder.partner_id)await db("adpixel_partner_events",{method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({partner_id:oldOrder.partner_id,event_type:"referred_order_status_changed",detail:{order_id:id,payment_status:payment,admin_note:note}})});
       return respond({ok:true});
     }
