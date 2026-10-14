@@ -110,9 +110,10 @@ Deno.serve(async (req: Request) => {
       const base = w * h * 100;
       const popup = popupPresent ? 200 : 0;
       const positionCost = position ? 50 : 0;
-      const suppliedCode = typeof data.freeCode === "string" ? data.freeCode : "";
-      const configuredCode = env("ADPIXEL_FREE_CODE");
-      if (suppliedCode && (!configuredCode || suppliedCode !== configuredCode)) return json({error:"invalid_free_code", message:"Der eingegebene Freischaltcode ist ungültig. Amazon-Geschenkkarten können hier nicht als Zahlung verifiziert werden."}, 422);
+      const suppliedCode = typeof data.freeCode === "string" ? data.freeCode.trim() : "";
+      const configuredCode = env("ADPIXEL_FREE_CODE").trim();
+      if (suppliedCode && !configuredCode) return json({error:"free_code_not_configured", message:"Der Freischaltcode ist serverseitig noch nicht eingerichtet. Bitte ADPIXEL_FREE_CODE in den Supabase-Edge-Function-Secrets setzen."}, 503);
+      if (suppliedCode && suppliedCode !== configuredCode) return json({error:"invalid_free_code", message:"Der Freischaltcode ist falsch. Bitte prüfe den eingegebenen Code."}, 422);
       const isFree = Boolean(configuredCode && suppliedCode && suppliedCode === configuredCode);
       const amount = isFree ? 0 : base + popup + positionCost;
       const orderId = crypto.randomUUID();
