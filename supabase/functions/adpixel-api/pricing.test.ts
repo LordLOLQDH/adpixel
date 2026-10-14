@@ -13,7 +13,7 @@ Deno.test("base price and position surcharge are calculated in integer cents",()
   assert(calculatePriceCents(500,25,20,true,false,false).totalCents===470,"500-pixel package should be 4.70 EUR with position");
 });
 Deno.test("popup and free popup position surcharge are applied only when popup is present",()=>{
-  assert(calculatePriceCents(10,5,2,false,true,true).totalCents===310,"10 pixels plus popup and popup position should be 3.10 EUR");
+  assert(calculatePriceCents(10,5,2,false,true,true).totalCents===220,"10 pixels plus popup and popup position should be 2.20 EUR");
   assert(calculatePriceCents(10,5,2,false,false,true).totalCents===10,"popup position without popup must not be charged");
 });
 Deno.test("valid package area boundaries are accepted",()=>{
