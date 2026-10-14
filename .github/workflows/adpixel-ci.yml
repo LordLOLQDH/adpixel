@@ -19,3 +19,5 @@ jobs:
         run: deno test supabase/functions/adpixel-api/pricing.test.ts supabase/functions/adpixel-api/security.test.ts
       - name: Type-check Edge Function
         run: deno check supabase/functions/adpixel-api/index.ts
+      - name: Check static page JavaScript syntax
+        run: node tests/check-html.mjs
