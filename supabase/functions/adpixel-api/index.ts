@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { PACKAGE_PRICES, POSITION_PRICES, POPUP_PRICE_CENTS, POPUP_POSITION_SURCHARGE_CENTS, calculatePriceCents } from "./pricing.ts";
 
 const env = (key: string) => Deno.env.get(key) ?? "";
 const configuredOrigins = (env("ADPIXEL_ALLOWED_ORIGINS") || "https://lordlolqdh.github.io").split(",").map(v => v.trim()).filter(Boolean);
@@ -99,8 +100,6 @@ async function partnerAuthorized(req: Request) {
 
 
 // Central authoritative prices in EUR cents, keyed by package pixel count.
-const PACKAGE_PRICES: Record<number, number> = {1:1,2:2,4:4,10:10,100:100,200:200,400:370,500:450};
-const POSITION_PRICES: Record<number, number> = {1:30,2:30,4:30,10:30,100:25,200:25,400:25,500:20};
 function b64urlEncodeText(s:string){return b64url(new TextEncoder().encode(s))}
 function randomCode(length:number){
   const alphabet="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -181,7 +180,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     if (action === "pricing") {
-      return respond({currency:"EUR", packages:PACKAGE_PRICES, positionSurcharges:POSITION_PRICES, popupPriceCents:200, popupPositionSurchargeCents:10, maxImageBytes:8388608}, 200, origin);
+      return respond({currency:"EUR", packages:PACKAGE_PRICES, positionSurcharges:POSITION_PRICES, popupPriceCents:POPUP_PRICE_CENTS, popupPositionSurchargeCents:POPUP_POSITION_SURCHARGE_CENTS, maxImageBytes:8388608}, 200, origin);
     }
     if (action === "partner_click") {
       const code = String(data.code || "").trim().toUpperCase();
@@ -215,10 +214,13 @@ Deno.serve(async (req: Request) => {
       if (data.popupUrl && !popupTarget) return respond({error:"invalid_popup_url"}, 400);
       const position = data.customPosition === true;
       const popupCustomPosition = popupPresent && data.popupCustomPosition === true;
-      const base = PACKAGE_PRICES[packagePixels];
-      const popup = popupPresent ? 200 : 0;
-      const positionCost = position ? POSITION_PRICES[packagePixels] : 0;
-      const popupPositionCost = popupCustomPosition ? 10 : 0;
+      let price;
+      try { price = calculatePriceCents(packagePixels,w,h,position,popupPresent,popupCustomPosition); }
+      catch { return respond({error:"invalid_ad",message:"Größe oder Pixelpaket ist ungültig."},400,origin); }
+      const base = price.baseCents;
+      const popup = price.popupCents;
+      const positionCost = price.positionCents;
+      const popupPositionCost = price.popupPositionCents;
       const suppliedCode = typeof data.freeCode === "string" ? data.freeCode.trim() : "";
       const configuredCode = env("ADPIXEL_FREE_CODE").trim();
       if (suppliedCode && !configuredCode) return respond({error:"free_code_not_configured", message:"Der Freischaltcode ist serverseitig noch nicht eingerichtet. Bitte ADPIXEL_FREE_CODE in den Supabase-Edge-Function-Secrets setzen."}, 503, origin);
@@ -313,7 +315,7 @@ Deno.serve(async (req: Request) => {
         const now=Date.now();
         const paidPixels=referrals.reduce((sum:number,r:any)=>{const o=Array.isArray(r.order)?r.order[0]:r.order;const eligible=o && o.payment_status==="paid" && !o.free_code_used && Number(o.amount_cents)>0 && new Date(r.createdAt).getTime()+90*86400000>=now;return sum+(eligible?Number(o.pixel_width)*Number(o.pixel_height):0)},0);
         const eligible=paidPixels>=500 && p.banner_status==="verified" && p.status==="active";
-        const newFreeStatus=eligible?(p.free_ad_status==="used"?"used":"eligible"):(p.free_ad_status==="approved"?"suspended":"locked");
+        const newFreeStatus=eligible?((["used","requested","approved"].includes(p.free_ad_status))?p.free_ad_status:"eligible"):(p.free_ad_status==="used"?"used":p.free_ad_status==="approved"?"suspended":"locked");
         if (newFreeStatus!==p.free_ad_status) await db("adpixel_partners?id=eq."+encodeURIComponent(p.id),{method:"PATCH",headers:{"Prefer":"return=minimal"},body:JSON.stringify({free_ad_status:newFreeStatus,updated_at:new Date().toISOString()})});
         return respond({ok:true,partner:{...p,free_ad_status:newFreeStatus},stats:{referrals:referrals.length,paidPixels,goalPixels:500,progressPercent:Math.min(100,Math.round(paidPixels/5)),attributionDays:90},referrals:referrals.slice(0,50).map((r:any)=>{const o=Array.isArray(r.order)?r.order[0]:r.order;return {createdAt:r.createdAt,orderId:r.orderId,pixels:Number(o.pixel_width)*Number(o.pixel_height),paymentStatus:o.payment_status,amountCents:o.amount_cents}})},200,origin);
       }
@@ -368,6 +370,12 @@ Deno.serve(async (req: Request) => {
       const p=existing?.[0];
       if(!p)return respond({error:"partner_not_found"},404,origin);
       if(status==="approved"&&(p.status!=="active"||p.banner_status!=="verified"))return respond({error:"partner_not_eligible",message:"Nur aktive Partner mit verifizierter Bannerintegration können eine kostenlose Werbefläche erhalten."},409,origin);
+      if(status==="approved"){
+        const refs=await db("adpixel_referrals?select=attributed_at,adpixel_orders(pixel_width,pixel_height,amount_cents,payment_status,free_code_used)&partner_id=eq."+encodeURIComponent(id)+"&limit=500");
+        const now=Date.now();
+        const pixels=(refs||[]).reduce((sum:number,r:any)=>{const o=Array.isArray(r.adpixel_orders)?r.adpixel_orders[0]:r.adpixel_orders;return sum+(o&&o.payment_status==="paid"&&!o.free_code_used&&Number(o.amount_cents)>0&&new Date(r.attributed_at).getTime()+90*86400000>=now?Number(o.pixel_width)*Number(o.pixel_height):0)},0);
+        if(pixels<500)return respond({error:"partner_not_eligible",message:"Für die Freigabe sind mindestens 500 bestätigte bezahlte Pixel innerhalb der 90-Tage-Frist erforderlich."},409,origin);
+      }
       await db("adpixel_partners?id=eq."+encodeURIComponent(id),{method:"PATCH",headers:{"Prefer":"return=minimal"},body:JSON.stringify({free_ad_status:status,updated_at:new Date().toISOString()})});
       if(status==="suspended"||status==="locked")await db("adpixel_ads?partner_id=eq."+encodeURIComponent(id)+"&is_partner_free=eq.true&published=eq.true",{method:"PATCH",headers:{"Prefer":"return=minimal"},body:JSON.stringify({published:false,published_at:null})});
       await db("adpixel_partner_events",{method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({partner_id:id,event_type:"admin_free_ad_status_changed",detail:{status}})});
@@ -404,7 +412,7 @@ Deno.serve(async (req: Request) => {
       if (!order) return respond({error:"order_not_found"}, 404);
       if (order.status !== "approved" || !(order.payment_status === "paid" || order.payment_status === "free_pending_review")) return respond({error:"order_not_eligible", message:"Zuerst Zahlung oder kostenlosen Auftrag prüfen und den Auftrag freigeben."}, 409, origin);
       if(order.free_code_used && order.payment_status!=="free_pending_review")return respond({error:"free_order_payment_invalid"},409,origin);
-      await db("adpixel_ads?on_conflict=order_id", {method:"POST", headers:{"Prefer":"resolution=merge-duplicates,return=minimal"}, body:JSON.stringify({order_id:order.id,image_path:order.main_image_path,target_url:order.target_url,pixel_width:order.pixel_width,pixel_height:order.pixel_height,popup_image_path:order.popup_image_path,popup_text:order.popup_text,popup_button:order.popup_button,popup_url:order.popup_url,partner_id:order.partner_id||null,is_partner_free:false,published:true,published_at:new Date().toISOString()})});
+      await db("adpixel_ads?on_conflict=order_id", {method:"POST", headers:{"Prefer":"resolution=merge-duplicates,return=minimal"}, body:JSON.stringify({order_id:order.id,image_path:order.main_image_path,target_url:order.target_url,pixel_width:order.pixel_width,pixel_height:order.pixel_height,popup_image_path:order.popup_image_path,popup_text:order.popup_text,popup_button:order.popup_button,popup_url:order.popup_url,popup_custom_position:order.popup_custom_position===true,partner_id:order.partner_id||null,is_partner_free:false,published:true,published_at:new Date().toISOString()})});
       await db("adpixel_orders?id=eq." + encodeURIComponent(id), {method:"PATCH", headers:{"Prefer":"return=minimal"}, body:JSON.stringify({status:"published",updated_at:new Date().toISOString()})});
       return respond({ok:true},200,origin);
     }
