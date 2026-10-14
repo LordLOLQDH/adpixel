@@ -1,0 +1,21 @@
+name: AdPixel CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pricing-and-types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Test server-side pricing rules
+        run: deno test supabase/functions/adpixel-api/pricing.test.ts
+      - name: Type-check Edge Function
+        run: deno check supabase/functions/adpixel-api/index.ts
