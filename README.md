@@ -1,6 +1,6 @@
 # AdPixel — Werbeflächen und Partnerprogramm
 
-Version: **0.4.0** (in Entwicklung)
+Version: **0.4.1** (in Entwicklung)
 
 AdPixel is a mobile-friendly static site backed by a Supabase Edge Function, PostgreSQL and Supabase Storage.
 
@@ -47,7 +47,7 @@ New AdPixel columns track referral attribution and optional popup position. RLS 
 
 ## Partner program
 
-- Registration and login use PBKDF2-SHA-256 with a random salt and 210,000 iterations. Partner sessions are signed and expire after 30 days; admin sessions expire after four hours.
+- Registration and login use PBKDF2-SHA-256 with a random salt and 210,000 iterations. Partner sessions are signed and expire after 30 days; admin sessions expire after four hours. Admin/partner login and registration attempts are rate-limited in an AdPixel-only table.
 - Each partner receives a random `AP-...` code, a personal link and an HTML banner marker.
 - Referral attribution uses a server-signed token valid for 90 days. Self-referrals are rejected. Free-code orders and unpaid/refunded orders do not qualify.
 - Progress counts manually confirmed paid pixels for attributed orders within the 90-day attribution period. A 500-paid-pixel threshold is required before a partner can request a free placement.
@@ -105,8 +105,10 @@ Secrets cannot be read or set through the connected tools in this session. Verif
 - `supabase/migrations/20261014170000_adpixel_partners.sql`
 - `supabase/migrations/20261014173000_adpixel_popup_position.sql`
 - `supabase/migrations/20261014180000_adpixel_order_idempotency.sql`
+- `supabase/migrations/20261014183000_adpixel_auth_rate_limit.sql`
+- `supabase/migrations/20261014184000_adpixel_auth_rate_limit_fix.sql`
 
-The new AdPixel migrations have been applied to the connected Supabase project. Order submissions include a unique idempotency key so retrying the same request does not create a second order. Do not edit applied migration files; create a new migration for future schema changes.
+The new AdPixel migrations have been applied to the connected Supabase project. Order submissions include a unique idempotency key so retrying the same request does not create a second order. Authentication rate limiting uses an AdPixel-only database function whose execute permission is restricted to `service_role`. Do not edit applied migration files; create a new migration for future schema changes.
 
 ## Automated tests
 
