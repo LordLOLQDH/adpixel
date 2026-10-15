@@ -416,13 +416,15 @@ Deno.serve(async (req: Request) => {
     }
     if (action === "admin_update_order") {
       const id = String(data.id || "");
-      const status = String(data.status || "");
+      let status = String(data.status || "");
       const payment = String(data.paymentStatus || "");
       const note=String(data.note||"").trim().slice(0,1000);
-      if (!/^[0-9a-f-]{36}$/i.test(id) || !["pending","approved","rejected"].includes(status) || !["pending","free_pending_review","manual_review","paid","refunded","failed"].includes(payment)) return respond({error:"invalid_update"}, 400, origin);
-      const existing=await db("adpixel_orders?select=id,free_code_used,payment_status,partner_id,amount_cents&id=eq."+encodeURIComponent(id)+"&limit=1");
+      if (!/^[0-9a-f-]{36}$/i.test(id) || !["pending","approved","rejected","published"].includes(status) || !["pending","free_pending_review","manual_review","paid","refunded","failed"].includes(payment)) return respond({error:"invalid_update"}, 400, origin);
+      const existing=await db("adpixel_orders?select=id,status,free_code_used,payment_status,partner_id,amount_cents&id=eq."+encodeURIComponent(id)+"&limit=1");
       const oldOrder=existing?.[0];
       if(!oldOrder)return respond({error:"order_not_found"},404,origin);
+      if(status==="published"&&oldOrder.status!=="published")return respond({error:"invalid_update",message:"Nur bereits veröffentlichte Bestellungen können diesen Status behalten."},400,origin);
+      if(payment==="refunded"||payment==="failed")status="rejected";
       if(payment==="paid"&&!note)return respond({error:"payment_note_required",message:"Für eine manuelle Zahlungsbestätigung ist eine Prüfnotiz erforderlich."},400,origin);
       if(payment==="paid"&&(oldOrder.free_code_used||Number(oldOrder.amount_cents)<=0))return respond({error:"cannot_mark_free_order_paid",message:"Kostenlose Testbestellungen dürfen nicht als bezahlte Käufe gelten."},409,origin);
       await db("adpixel_orders?id=eq." + encodeURIComponent(id), {method:"PATCH", headers:{"Prefer":"return=minimal"}, body:JSON.stringify({status, payment_status:payment, admin_note:note, updated_at:new Date().toISOString()})});
