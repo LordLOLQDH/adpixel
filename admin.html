@@ -2,12 +2,30 @@
 <html lang="de">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><title>AdPixel Admin · v0.4.2</title>
+<meta name="robots" content="noindex,nofollow"><title>AdPixel Admin · v0.4.3</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#000;color:#ddd;font:14px Arial,Helvetica,sans-serif}.top{background:#d5d5d5;color:#111;border-bottom:3px solid #777;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:12px}.top h1{font-size:22px;margin:0}.wrap{max-width:1200px;margin:24px auto;padding:0 14px}.panel{background:#ddd;color:#111;border:3px ridge white;padding:18px;margin-bottom:18px}.panel h2{font-size:18px;margin:0 0 14px}.field{display:grid;gap:6px;margin-bottom:12px}.field label{font-weight:bold}.field input,.field textarea,.field select{width:100%;padding:10px;border:2px inset white;border-radius:0;background:white;color:#111;font:inherit}.btn{padding:9px 12px;background:#ddd;color:#111;border:2px outset white;font-weight:bold;cursor:pointer}.btn:active{border-style:inset}.btn:disabled{opacity:.5;cursor:wait}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.message{padding:10px;background:#fff;border:1px solid #777;margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere}.order{background:#eee;color:#111;border:2px ridge white;padding:14px;margin:12px 0;overflow-wrap:anywhere}.order h3{margin:0 0 8px;font-size:16px}.meta{font-size:12px;color:#444;line-height:1.6}.order-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}.order-controls label{display:grid;gap:5px;font-weight:bold;font-size:12px}.note{font-size:12px;line-height:1.5;color:#444}.hidden{display:none!important}@media(max-width:700px){.top{align-items:flex-start;flex-direction:column}.order-controls{grid-template-columns:1fr}.wrap{padding:0 8px}.panel{padding:12px}}
 body{min-width:0}input,select,textarea{max-width:100%;min-width:0}.panel,.order{min-width:0;overflow-wrap:anywhere}.btn{min-height:42px;touch-action:manipulation}.row>*{min-width:0;max-width:100%}.top a{overflow-wrap:anywhere}@media(max-width:700px){.top{padding:12px;gap:10px}.top h1{font-size:19px;line-height:1.3}.wrap{margin:12px auto;padding:0 8px}.panel{padding:12px}.row{align-items:stretch}.row .btn{flex:1}.order-controls{grid-template-columns:minmax(0,1fr)}.order{padding:10px}.meta{line-height:1.75;word-break:break-word}.field input,.field textarea,.field select{font-size:16px;padding:12px}.btn{padding:11px 12px}.panel h2{line-height:1.35}}
+
+/* AdPixel modern admin UI v0.4.3 */
+:root{color-scheme:dark;--accent:#ff6a00;--surface:#141923;--border:#2b3342}
+body{background:radial-gradient(ellipse at 50% -25%,#28202a 0,#0b0e14 52%,#080a0f 100%);color:#eef1f6;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}
+.top{background:rgba(17,21,30,.92);color:#f5f6f8;border-bottom:1px solid #2b3342;padding:18px clamp(14px,4vw,42px);backdrop-filter:blur(16px)}
+.top h1{font-size:clamp(18px,3vw,24px);letter-spacing:-.5px}.top a{color:#dce1eb!important;text-decoration:none}.top a:hover{color:var(--accent)!important}
+.wrap{max-width:1220px;margin:30px auto;padding:0 18px 44px}
+.panel{background:linear-gradient(145deg,#171d28,#111620);color:#eef1f6;border:1px solid #2a3241;border-radius:17px;padding:22px;margin-bottom:18px;box-shadow:0 12px 36px #0002}
+.panel h2{font-size:18px;letter-spacing:-.3px}.field label{color:#dbe1eb}
+.field input,.field textarea,.field select{background:#0a0e15;color:#f4f6fa;border:1px solid #343c4c;border-radius:10px;padding:12px;outline:none}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #ff69001e}
+.btn{background:linear-gradient(180deg,#ff7b22,#f45b00);color:#fff;border:1px solid #ff8b3e;border-radius:10px;padding:11px 15px;font-weight:650;transition:transform .15s,filter .15s}
+.btn:hover{filter:brightness(1.08);transform:translateY(-1px)}.btn:active{transform:translateY(0)}.btn:disabled{opacity:.5}
+.message{background:#122019;color:#c9f2d9;border:1px solid #285a43;border-radius:10px;padding:12px}
+.order{background:#0e131c;color:#e9edf4;border:1px solid #2a3342;border-radius:13px;padding:17px;margin:12px 0}
+.order h3{font-size:16px}.meta,.note{color:#9da8b8;line-height:1.7}.order-controls label{color:#cfd6e2}.hidden{display:none!important}
+@media(max-width:700px){.top{padding:14px}.wrap{margin:16px auto;padding:0 10px 30px}.panel{padding:16px}.order{padding:13px}.row{gap:8px}.row .btn{flex:1}.field input,.field textarea,.field select{font-size:16px}}
+
 </style></head><body>
-<header class="top"><h1>AdPixel — Adminbereich · v0.4.2</h1><a href="index.html" style="color:#111">Zur Website</a></header>
+<header class="top"><h1>AdPixel — Adminbereich · v0.4.3</h1><a href="index.html" style="color:#111">Zur Website</a></header>
 <main class="wrap">
 <section id="loginPanel" class="panel"><h2>Admin-Anmeldung</h2><p>Der Zugangscode wird nur zur sicheren Anmeldung übertragen und ist nicht in der Website hinterlegt.</p><form id="loginForm"><div class="field"><label for="adminCode">Admin-Code</label><input id="adminCode" type="password" autocomplete="current-password" required></div><button class="btn" type="submit">Sicher anmelden</button></form><div id="loginMessage" class="message hidden" role="status"></div></section>
 <section id="dashboard" class="hidden"><div class="panel"><div class="row"><h2 style="margin:0;flex:1">Bestellungen und Anzeigen</h2><button class="btn" id="refresh">Aktualisieren</button><button class="btn" id="logout">Abmelden</button></div><p class="note">Eine Bestellung darf erst nach unabhängig bestätigter Zahlung als bezahlt markiert werden. Freie Bestellungen müssen zuerst freigegeben werden. Amazon-Geschenkkarten werden nicht automatisch geprüft.</p><div id="dashboardMessage" class="message hidden" role="status"></div></div><div id="orders"></div><div class="panel"><h2>Veröffentlichte Anzeigen</h2><div id="ads"></div></div><div class="panel"><h2>Partnerverwaltung</h2><p class="note">Kostenlose Partnerwerbeflächen erst nach Bannerprüfung und 500 bestätigten, bezahlten Pixeln freigeben. Partner-Sperren deaktivieren kostenlose Partneranzeigen.</p><div id="partners"></div></div></section>
