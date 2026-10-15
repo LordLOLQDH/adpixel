@@ -284,15 +284,17 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "admin_login") {
+      const configured = env("ADPIXEL_ADMIN_CODE");
+      if (!SESSION_SECRET || !configured) return respond({error:"server_auth_not_configured",message:"Der Adminzugang ist serverseitig nicht vollständig eingerichtet. In Supabase müssen ADPIXEL_ADMIN_CODE und ADPIXEL_SESSION_SECRET gesetzt sein."},503,origin);
       if(!await authAttemptAllowed(req,"admin",8,900))return respond({error:"rate_limited",message:"Zu viele Anmeldeversuche. Bitte warte 15 Minuten."},429,origin);
       const provided = typeof data.code === "string" ? data.code : "";
-      const configured = env("ADPIXEL_ADMIN_CODE");
-      if (!configured || !SESSION_SECRET || !provided || provided !== configured) return respond({error:"invalid_admin_code"}, 401);
+      if (!provided || !constantTimeEqual(provided, configured)) return respond({error:"invalid_admin_code",message:"Der eingegebene Admin-Code ist falsch."}, 401, origin);
       const now = Math.floor(Date.now()/1000);
       return respond({ok:true, token:await sign({role:"admin", iat:now, exp:now+60*60*4})}, 200, origin);
     }
 
     if (action === "partner_register") {
+      if (!SESSION_SECRET) return respond({error:"server_auth_not_configured",message:"Die Partner-Anmeldung ist serverseitig nicht vollständig eingerichtet. Bitte ADPIXEL_SESSION_SECRET in Supabase setzen."},503,origin);
       if(!await authAttemptAllowed(req,"register",5,900))return respond({error:"rate_limited",message:"Zu viele Registrierungsversuche. Bitte warte 15 Minuten."},429,origin);
       const displayName = String(data.displayName || "").trim();
       const email = String(data.email || "").trim().toLowerCase();
@@ -315,6 +317,7 @@ Deno.serve(async (req: Request) => {
       return respond({ok:true,token:await sign({role:"partner",partnerId:created.id,iat:now,exp:now+30*24*60*60}),partner:{id:created.id,email,display_name:displayName,website_url:website||null,partner_code:partnerCode,status:"active",banner_status:partner.banner_status,free_ad_status:"locked"}},201,origin);
     }
     if (action === "partner_login") {
+      if (!SESSION_SECRET) return respond({error:"server_auth_not_configured",message:"Die Partner-Anmeldung ist serverseitig nicht vollständig eingerichtet. Bitte ADPIXEL_SESSION_SECRET in Supabase setzen."},503,origin);
       const email=String(data.email||"").trim().toLowerCase(), password=String(data.password||"");
       if(!await authAttemptAllowed(req,"partner:"+email,8,900))return respond({error:"rate_limited",message:"Zu viele Anmeldeversuche. Bitte warte 15 Minuten."},429,origin);
       const rows=await db("adpixel_partners?select=id,email,display_name,website_url,password_salt,password_hash,partner_code,status,banner_status,free_ad_status,free_ad_order_id,last_banner_check_at,last_banner_check_message,created_at&email=eq."+encodeURIComponent(email)+"&limit=1");
