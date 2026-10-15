@@ -286,9 +286,11 @@ Deno.serve(async (req: Request) => {
     if (action === "admin_login") {
       const configured = env("ADPIXEL_ADMIN_CODE");
       if (!SESSION_SECRET || !configured) return respond({error:"server_auth_not_configured",message:"Der Adminzugang ist serverseitig nicht vollständig eingerichtet. In Supabase müssen ADPIXEL_ADMIN_CODE und ADPIXEL_SESSION_SECRET gesetzt sein."},503,origin);
-      if(!await authAttemptAllowed(req,"admin",8,900))return respond({error:"rate_limited",message:"Zu viele Anmeldeversuche. Bitte warte 15 Minuten."},429,origin);
       const provided = typeof data.code === "string" ? data.code : "";
-      if (!provided || !constantTimeEqual(provided, configured)) return respond({error:"invalid_admin_code",message:"Der eingegebene Admin-Code ist falsch."}, 401, origin);
+      if (!provided || !constantTimeEqual(provided, configured)) {
+        if(!await authAttemptAllowed(req,"admin",8,900))return respond({error:"rate_limited",message:"Zu viele falsche Anmeldeversuche. Bitte warte 15 Minuten."},429,origin);
+        return respond({error:"invalid_admin_code",message:"Der eingegebene Admin-Code ist falsch."}, 401, origin);
+      }
       const now = Math.floor(Date.now()/1000);
       return respond({ok:true, token:await sign({role:"admin", iat:now, exp:now+60*60*4})}, 200, origin);
     }
@@ -449,8 +451,14 @@ Deno.serve(async (req: Request) => {
     if (action === "admin_delete_order") {
       const id = String(data.id || "");
       if (!/^[0-9a-f-]{36}$/i.test(id)) return respond({error:"invalid_id"}, 400);
+      const found = await db("adpixel_orders?select=id,main_image_path,popup_image_path&id=eq." + encodeURIComponent(id) + "&limit=1");
+      const order = found?.[0];
+      if (!order) return respond({error:"order_not_found",message:"Die Bestellung wurde nicht gefunden."},404,origin);
+      await db("adpixel_ads?order_id=eq." + encodeURIComponent(id), {method:"DELETE"});
       await db("adpixel_orders?id=eq." + encodeURIComponent(id), {method:"DELETE"});
-      return respond({ok:true});
+      if (order.main_image_path) await removeUploaded(order.main_image_path);
+      if (order.popup_image_path) await removeUploaded(order.popup_image_path);
+      return respond({ok:true,message:"Bestellung und zugehörige Anzeigen wurden gelöscht."});
     }
     return respond({error:"unknown_action"}, 400, origin);
   } catch (error) {
