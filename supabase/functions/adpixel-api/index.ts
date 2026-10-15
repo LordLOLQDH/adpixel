@@ -427,8 +427,10 @@ Deno.serve(async (req: Request) => {
       if(payment==="refunded"||payment==="failed")status="rejected";
       if(payment==="paid"&&!note)return respond({error:"payment_note_required",message:"Für eine manuelle Zahlungsbestätigung ist eine Prüfnotiz erforderlich."},400,origin);
       if(payment==="paid"&&(oldOrder.free_code_used||Number(oldOrder.amount_cents)<=0))return respond({error:"cannot_mark_free_order_paid",message:"Kostenlose Testbestellungen dürfen nicht als bezahlte Käufe gelten."},409,origin);
+      if(payment==="free_pending_review"&&!oldOrder.free_code_used)return respond({error:"invalid_free_payment_state",message:"Der Status „Kostenlos – Prüfung offen“ ist nur für Bestellungen mit gültigem Freischaltcode erlaubt."},409,origin);
+      if(oldOrder.status==="published"&&!["paid","free_pending_review"].includes(payment))status="rejected";
       await db("adpixel_orders?id=eq." + encodeURIComponent(id), {method:"PATCH", headers:{"Prefer":"return=minimal"}, body:JSON.stringify({status, payment_status:payment, admin_note:note, updated_at:new Date().toISOString()})});
-      if(payment==="refunded"||payment==="failed")await db("adpixel_ads?order_id=eq."+encodeURIComponent(id)+"&published=eq.true",{method:"PATCH",headers:{"Prefer":"return=minimal"},body:JSON.stringify({published:false,published_at:null})});
+      if(payment==="refunded"||payment==="failed"||(oldOrder.status==="published"&&!["paid","free_pending_review"].includes(payment)))await db("adpixel_ads?order_id=eq."+encodeURIComponent(id)+"&published=eq.true",{method:"PATCH",headers:{"Prefer":"return=minimal"},body:JSON.stringify({published:false,published_at:null})});
       if(oldOrder.partner_id)await db("adpixel_partner_events",{method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({partner_id:oldOrder.partner_id,event_type:"referred_order_status_changed",detail:{order_id:id,payment_status:payment,admin_note:note}})});
       return respond({ok:true});
     }
@@ -438,8 +440,9 @@ Deno.serve(async (req: Request) => {
       const found = await db("adpixel_orders?select=*&id=eq." + encodeURIComponent(id) + "&limit=1");
       const order = found?.[0];
       if (!order) return respond({error:"order_not_found"}, 404);
-      if (order.status !== "approved" || !(order.payment_status === "paid" || order.payment_status === "free_pending_review")) return respond({error:"order_not_eligible", message:"Zuerst Zahlung oder kostenlosen Auftrag prüfen und den Auftrag freigeben."}, 409, origin);
-      if(order.free_code_used && order.payment_status!=="free_pending_review")return respond({error:"free_order_payment_invalid"},409,origin);
+      const paidOrderEligible=order.payment_status==="paid"&&!order.free_code_used&&Number(order.amount_cents)>0;
+      const freeOrderEligible=order.payment_status==="free_pending_review"&&order.free_code_used&&Number(order.amount_cents)===0;
+      if (order.status !== "approved" || !(paidOrderEligible || freeOrderEligible)) return respond({error:"order_not_eligible", message:"Veröffentlichen ist nur nach bestätigter Zahlung oder nach Prüfung eines gültigen kostenlosen Auftrags möglich."}, 409, origin);
       await db("adpixel_ads?on_conflict=order_id", {method:"POST", headers:{"Prefer":"resolution=merge-duplicates,return=minimal"}, body:JSON.stringify({order_id:order.id,image_path:order.main_image_path,target_url:order.target_url,pixel_width:order.pixel_width,pixel_height:order.pixel_height,popup_image_path:order.popup_image_path,popup_text:order.popup_text,popup_button:order.popup_button,popup_url:order.popup_url,popup_custom_position:order.popup_custom_position===true,partner_id:order.partner_id||null,is_partner_free:false,published:true,published_at:new Date().toISOString()})});
       await db("adpixel_orders?id=eq." + encodeURIComponent(id), {method:"PATCH", headers:{"Prefer":"return=minimal"}, body:JSON.stringify({status:"published",updated_at:new Date().toISOString()})});
       return respond({ok:true},200,origin);
